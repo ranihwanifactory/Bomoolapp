@@ -1,0 +1,210 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Player profile, level progress, coins, score, and ban status.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "nickname": { "type": "string", "description": "Player display nickname (1-20 chars)" },
+        "avatar": { "type": "string", "description": "Selected mascot/avatar emoji or key" },
+        "level": { "type": "integer", "description": "Player level (1-50)" },
+        "exp": { "type": "integer", "description": "Current experience points" },
+        "coins": { "type": "integer", "description": "Current coin balance" },
+        "score": { "type": "integer", "description": "All-time total score" },
+        "weeklyScore": { "type": "integer", "description": "Weekly score" },
+        "treasureCount": { "type": "integer", "description": "Total treasures collected" },
+        "banned": { "type": "boolean", "description": "Whether account is suspended by admin" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update" }
+      },
+      "required": ["userId", "nickname", "avatar", "level", "exp", "coins", "score", "weeklyScore", "treasureCount", "banned", "createdAt", "updatedAt"]
+    },
+    "UserInventoryItem": {
+      "title": "UserInventoryItem",
+      "description": "Consumable or equippable item count owned by a player.",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string", "description": "Item definition ID" },
+        "count": { "type": "integer", "description": "Owned quantity (0-999)" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["itemId", "count", "updatedAt"]
+    },
+    "UserCollectionEntry": {
+      "title": "UserCollectionEntry",
+      "description": "Discovered treasure count and first discovery time.",
+      "type": "object",
+      "properties": {
+        "treasureId": { "type": "string", "description": "Treasure definition ID" },
+        "count": { "type": "integer", "description": "Number of times collected" },
+        "firstAt": { "type": "string", "format": "date-time", "description": "First collected server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last collected server timestamp" }
+      },
+      "required": ["treasureId", "count", "firstAt", "updatedAt"]
+    },
+    "ReadNotificationMarker": {
+      "title": "ReadNotificationMarker",
+      "description": "Tracks which notifications a user has read.",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string", "description": "Notification ID" },
+        "readAt": { "type": "string", "format": "date-time", "description": "Server timestamp when marked read" }
+      },
+      "required": ["notificationId", "readAt"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public ranking summary containing no PII.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "nickname": { "type": "string", "description": "Player nickname" },
+        "avatar": { "type": "string", "description": "Player avatar emoji" },
+        "level": { "type": "integer", "description": "Player level (1-50)" },
+        "score": { "type": "integer", "description": "Total score" },
+        "weeklyScore": { "type": "integer", "description": "Weekly score" },
+        "treasureCount": { "type": "integer", "description": "Total treasures collected" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userId", "nickname", "avatar", "level", "score", "weeklyScore", "treasureCount", "updatedAt"]
+    },
+    "TreasureDefinition": {
+      "title": "TreasureDefinition",
+      "description": "Catalog treasure item managed by admin.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "desc": { "type": "string" },
+        "rarity": { "type": "string", "enum": ["common", "uncommon", "rare", "hero", "legend"] },
+        "minLevel": { "type": "integer" },
+        "score": { "type": "integer" },
+        "coins": { "type": "integer" },
+        "emoji": { "type": "string" },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "desc", "rarity", "minLevel", "score", "coins", "emoji", "active", "updatedAt"]
+    },
+    "ItemDefinition": {
+      "title": "ItemDefinition",
+      "description": "Catalog explorer item managed by admin.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "desc": { "type": "string" },
+        "effectType": { "type": "string", "enum": ["magnifier", "radar", "time", "luck"] },
+        "effectValue": { "type": "integer" },
+        "price": { "type": "integer" },
+        "minLevel": { "type": "integer" },
+        "emoji": { "type": "string" },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "desc", "effectType", "effectValue", "price", "minLevel", "emoji", "active", "updatedAt"]
+    },
+    "LevelConfig": {
+      "title": "LevelConfig",
+      "description": "Required EXP and reward per player level.",
+      "type": "object",
+      "properties": {
+        "level": { "type": "integer" },
+        "needExp": { "type": "integer" },
+        "rewardCoins": { "type": "integer" },
+        "rewardItemId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["level", "needExp", "rewardCoins", "rewardItemId", "updatedAt"]
+    },
+    "RarityConfig": {
+      "title": "RarityConfig",
+      "description": "Rarity spawn weights per level bracket.",
+      "type": "object",
+      "properties": {
+        "minLevel": { "type": "integer" },
+        "maxLevel": { "type": "integer" },
+        "common": { "type": "integer" },
+        "uncommon": { "type": "integer" },
+        "rare": { "type": "integer" },
+        "hero": { "type": "integer" },
+        "legend": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["minLevel", "maxLevel", "common", "uncommon", "rare", "hero", "legend", "updatedAt"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "In-app announcement sent by admin.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "targetMinLevel": { "type": "integer" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "body", "targetMinLevel", "createdBy", "createdAt"]
+    },
+    "GameEvent": {
+      "title": "GameEvent",
+      "description": "Time-limited bonus multiplier event.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "desc": { "type": "string" },
+        "multiplierPercent": { "type": "integer" },
+        "startAtMillis": { "type": "integer" },
+        "endAtMillis": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "desc", "multiplierPercent", "startAtMillis", "endAtMillis", "active", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile and progression document"
+    },
+    "/users/{userId}/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/UserInventoryItem" },
+      "description": "Player owned item stack"
+    },
+    "/users/{userId}/collection/{treasureId}": {
+      "schema": { "$ref": "#/entities/UserCollectionEntry" },
+      "description": "Player discovered treasure entry"
+    },
+    "/users/{userId}/readNotifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/ReadNotificationMarker" },
+      "description": "Read status marker for notifications"
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Public non-PII ranking entry"
+    },
+    "/treasures/{treasureId}": {
+      "schema": { "$ref": "#/entities/TreasureDefinition" },
+      "description": "Admin-managed treasure catalog"
+    },
+    "/items/{itemId}": {
+      "schema": { "$ref": "#/entities/ItemDefinition" },
+      "description": "Admin-managed item catalog"
+    },
+    "/levelConfigs/{levelId}": {
+      "schema": { "$ref": "#/entities/LevelConfig" },
+      "description": "Admin-managed level curve"
+    },
+    "/rarityConfigs/{rangeId}": {
+      "schema": { "$ref": "#/entities/RarityConfig" },
+      "description": "Admin-managed rarity drop rates"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/AppNotification" },
+      "description": "Admin-broadcast announcements"
+    },
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/GameEvent" },
+      "description": "Admin-managed limited-time events"
+    }
+  }
+}

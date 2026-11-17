@@ -1,0 +1,6 @@
+{
+  "name": "보물 레이더",
+  "description": "스마트폰 카메라로 현실 풍경 속 숨어 있는 보물을 찾아 모으는 증강현실(AR) 보물찾기 캐주얼 게임",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

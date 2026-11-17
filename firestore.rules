@@ -1,0 +1,408 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+             ('email' in request.auth.token) &&
+             ('email_verified' in request.auth.token) &&
+             request.auth.token.email == 'acehwan69@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
+    function isNotBanned() {
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.banned == false;
+    }
+
+    // --- Validation Helpers ---
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.nickname is string && data.nickname.size() >= 1 && data.nickname.size() <= 20 &&
+             data.avatar is string && data.avatar.size() >= 1 && data.avatar.size() <= 20 &&
+             data.level is int && data.level >= 1 && data.level <= 50 &&
+             data.exp is int && data.exp >= 0 && data.exp <= 1000000 &&
+             data.coins is int && data.coins >= 0 && data.coins <= 10000000 &&
+             data.score is int && data.score >= 0 && data.score <= 100000000 &&
+             data.weeklyScore is int && data.weeklyScore >= 0 && data.weeklyScore <= 100000000 &&
+             data.treasureCount is int && data.treasureCount >= 0 && data.treasureCount <= 1000000 &&
+             data.banned is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserInventoryItem(data) {
+      return data.itemId is string && isValidId(data.itemId) &&
+             data.count is int && data.count >= 0 && data.count <= 999 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserCollectionEntry(data) {
+      return data.treasureId is string && isValidId(data.treasureId) &&
+             data.count is int && data.count >= 1 && data.count <= 99999 &&
+             data.firstAt is timestamp && data.firstAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidReadNotificationMarker(data) {
+      return data.notificationId is string && isValidId(data.notificationId) &&
+             data.readAt is timestamp && data.readAt <= request.time;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.nickname is string && data.nickname.size() >= 1 && data.nickname.size() <= 20 &&
+             data.avatar is string && data.avatar.size() >= 1 && data.avatar.size() <= 20 &&
+             data.level is int && data.level >= 1 && data.level <= 50 &&
+             data.score is int && data.score >= 0 && data.score <= 100000000 &&
+             data.weeklyScore is int && data.weeklyScore >= 0 && data.weeklyScore <= 100000000 &&
+             data.treasureCount is int && data.treasureCount >= 0 && data.treasureCount <= 1000000 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTreasure(data) {
+      return data.name is string && data.name.size() >= 1 && data.name.size() <= 40 &&
+             data.desc is string && data.desc.size() >= 1 && data.desc.size() <= 200 &&
+             data.rarity in ['common', 'uncommon', 'rare', 'hero', 'legend'] &&
+             data.minLevel is int && data.minLevel >= 1 && data.minLevel <= 50 &&
+             data.score is int && data.score >= 1 && data.score <= 100000 &&
+             data.coins is int && data.coins >= 1 && data.coins <= 50000 &&
+             data.emoji is string && data.emoji.size() >= 1 && data.emoji.size() <= 16 &&
+             data.active is bool &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidItem(data) {
+      return data.name is string && data.name.size() >= 1 && data.name.size() <= 40 &&
+             data.desc is string && data.desc.size() >= 1 && data.desc.size() <= 200 &&
+             data.effectType in ['magnifier', 'radar', 'time', 'luck'] &&
+             data.effectValue is int && data.effectValue >= 1 && data.effectValue <= 1000 &&
+             data.price is int && data.price >= 0 && data.price <= 100000 &&
+             data.minLevel is int && data.minLevel >= 1 && data.minLevel <= 50 &&
+             data.emoji is string && data.emoji.size() >= 1 && data.emoji.size() <= 16 &&
+             data.active is bool &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidLevelConfig(data) {
+      return data.level is int && data.level >= 1 && data.level <= 50 &&
+             data.needExp is int && data.needExp >= 10 && data.needExp <= 100000 &&
+             data.rewardCoins is int && data.rewardCoins >= 0 && data.rewardCoins <= 50000 &&
+             data.rewardItemId is string && data.rewardItemId.size() <= 64 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidRarityConfig(data) {
+      return data.minLevel is int && data.minLevel >= 1 && data.minLevel <= 50 &&
+             data.maxLevel is int && data.maxLevel >= data.minLevel && data.maxLevel <= 50 &&
+             data.common is int && data.common >= 0 && data.common <= 100 &&
+             data.uncommon is int && data.uncommon >= 0 && data.uncommon <= 100 &&
+             data.rare is int && data.rare >= 0 && data.rare <= 100 &&
+             data.hero is int && data.hero >= 0 && data.hero <= 100 &&
+             data.legend is int && data.legend >= 0 && data.legend <= 100 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidNotification(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 80 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 400 &&
+             data.targetMinLevel is int && data.targetMinLevel >= 1 && data.targetMinLevel <= 50 &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidEvent(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 80 &&
+             data.desc is string && data.desc.size() >= 1 && data.desc.size() <= 200 &&
+             data.multiplierPercent is int && data.multiplierPercent >= 100 && data.multiplierPercent <= 500 &&
+             data.startAtMillis is int && data.startAtMillis >= 0 &&
+             data.endAtMillis is int && data.endAtMillis >= data.startAtMillis &&
+             data.active is bool &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'nickname', 'avatar', 'level', 'exp', 'coins', 'score', 'weeklyScore', 'treasureCount', 'banned', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'nickname', 'avatar', 'level', 'exp', 'coins', 'score', 'weeklyScore', 'treasureCount', 'banned', 'createdAt', 'updatedAt']) &&
+                       incoming().banned == false &&
+                       incoming().level == 1 &&
+                       incoming().exp == 0 &&
+                       incoming().coins == 100 &&
+                       incoming().score == 0 &&
+                       incoming().weeklyScore == 0 &&
+                       incoming().treasureCount == 0 &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['banned', 'updatedAt'])) ||
+                         (
+                           request.auth.uid == userId &&
+                           existing().banned == false &&
+                           incoming().banned == existing().banned &&
+                           incoming().level >= existing().level &&
+                           incoming().level <= existing().level + 5 &&
+                           incoming().coins <= existing().coins + 5000 &&
+                           incoming().score >= existing().score &&
+                           incoming().score <= existing().score + 10000 &&
+                           incoming().weeklyScore >= existing().weeklyScore &&
+                           incoming().weeklyScore <= existing().weeklyScore + 10000 &&
+                           incoming().treasureCount >= existing().treasureCount &&
+                           incoming().treasureCount <= existing().treasureCount + 20 &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['nickname', 'avatar', 'level', 'exp', 'coins', 'score', 'weeklyScore', 'treasureCount', 'updatedAt'])
+                         )
+                       );
+
+      allow delete: if false;
+
+      match /inventory/{itemId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(itemId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(itemId) &&
+                         request.auth.uid == userId &&
+                         incoming().itemId == itemId &&
+                         incoming().keys().hasAll(['itemId', 'count', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['itemId', 'count', 'updatedAt']) &&
+                         incoming().count <= 10 &&
+                         isValidUserInventoryItem(incoming()) &&
+                         isNotBanned();
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(itemId) &&
+                         request.auth.uid == userId &&
+                         isValidUserInventoryItem(incoming()) &&
+                         incoming().itemId == existing().itemId &&
+                         incoming().count <= existing().count + 10 &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['count', 'updatedAt']) &&
+                         isNotBanned();
+
+        allow delete: if false;
+      }
+
+      match /collection/{treasureId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(treasureId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(treasureId) &&
+                         request.auth.uid == userId &&
+                         incoming().treasureId == treasureId &&
+                         incoming().keys().hasAll(['treasureId', 'count', 'firstAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['treasureId', 'count', 'firstAt', 'updatedAt']) &&
+                         incoming().count <= 10 &&
+                         isValidUserCollectionEntry(incoming()) &&
+                         isNotBanned();
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(treasureId) &&
+                         request.auth.uid == userId &&
+                         isValidUserCollectionEntry(incoming()) &&
+                         incoming().treasureId == existing().treasureId &&
+                         incoming().firstAt == existing().firstAt &&
+                         incoming().count >= existing().count &&
+                         incoming().count <= existing().count + 10 &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['count', 'updatedAt']) &&
+                         isNotBanned();
+
+        allow delete: if false;
+      }
+
+      match /readNotifications/{notificationId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(notificationId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(notificationId) &&
+                         request.auth.uid == userId &&
+                         incoming().notificationId == notificationId &&
+                         incoming().keys().hasAll(['notificationId', 'readAt']) &&
+                         incoming().keys().hasOnly(['notificationId', 'readAt']) &&
+                         isValidReadNotificationMarker(incoming()) &&
+                         isNotBanned();
+
+        allow update, delete: if false;
+      }
+    }
+
+    match /leaderboard/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'nickname', 'avatar', 'level', 'score', 'weeklyScore', 'treasureCount', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'nickname', 'avatar', 'level', 'score', 'weeklyScore', 'treasureCount', 'updatedAt']) &&
+                       incoming().level <= 5 &&
+                       incoming().score <= 10000 &&
+                       incoming().weeklyScore <= 10000 &&
+                       incoming().treasureCount <= 20 &&
+                       isValidLeaderboardEntry(incoming()) &&
+                       isNotBanned();
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidLeaderboardEntry(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().level >= existing().level &&
+                       incoming().level <= existing().level + 5 &&
+                       incoming().score >= existing().score &&
+                       incoming().score <= existing().score + 10000 &&
+                       incoming().weeklyScore >= existing().weeklyScore &&
+                       incoming().weeklyScore <= existing().weeklyScore + 10000 &&
+                       incoming().treasureCount >= existing().treasureCount &&
+                       incoming().treasureCount <= existing().treasureCount + 20 &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['nickname', 'avatar', 'level', 'score', 'weeklyScore', 'treasureCount', 'updatedAt']) &&
+                       isNotBanned();
+
+      allow delete: if false;
+    }
+
+    match /treasures/{treasureId} {
+      allow get: if isSignedIn() && isValidId(treasureId);
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(treasureId) &&
+                       incoming().keys().hasAll(['name', 'desc', 'rarity', 'minLevel', 'score', 'coins', 'emoji', 'active', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['name', 'desc', 'rarity', 'minLevel', 'score', 'coins', 'emoji', 'active', 'updatedAt']) &&
+                       isValidTreasure(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(treasureId) &&
+                       isValidTreasure(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'desc', 'rarity', 'minLevel', 'score', 'coins', 'emoji', 'active', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(treasureId);
+    }
+
+    match /items/{itemId} {
+      allow get: if isSignedIn() && isValidId(itemId);
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(itemId) &&
+                       incoming().keys().hasAll(['name', 'desc', 'effectType', 'effectValue', 'price', 'minLevel', 'emoji', 'active', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['name', 'desc', 'effectType', 'effectValue', 'price', 'minLevel', 'emoji', 'active', 'updatedAt']) &&
+                       isValidItem(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(itemId) &&
+                       isValidItem(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'desc', 'effectType', 'effectValue', 'price', 'minLevel', 'emoji', 'active', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(itemId);
+    }
+
+    match /levelConfigs/{levelId} {
+      allow get: if isSignedIn() && isValidId(levelId);
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(levelId) &&
+                       incoming().keys().hasAll(['level', 'needExp', 'rewardCoins', 'rewardItemId', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['level', 'needExp', 'rewardCoins', 'rewardItemId', 'updatedAt']) &&
+                       isValidLevelConfig(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(levelId) &&
+                       isValidLevelConfig(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['level', 'needExp', 'rewardCoins', 'rewardItemId', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(levelId);
+    }
+
+    match /rarityConfigs/{rangeId} {
+      allow get: if isSignedIn() && isValidId(rangeId);
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(rangeId) &&
+                       incoming().keys().hasAll(['minLevel', 'maxLevel', 'common', 'uncommon', 'rare', 'hero', 'legend', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['minLevel', 'maxLevel', 'common', 'uncommon', 'rare', 'hero', 'legend', 'updatedAt']) &&
+                       isValidRarityConfig(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(rangeId) &&
+                       isValidRarityConfig(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['minLevel', 'maxLevel', 'common', 'uncommon', 'rare', 'hero', 'legend', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(rangeId);
+    }
+
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId);
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(notificationId) &&
+                       incoming().keys().hasAll(['title', 'body', 'targetMinLevel', 'createdBy', 'createdAt']) &&
+                       incoming().keys().hasOnly(['title', 'body', 'targetMinLevel', 'createdBy', 'createdAt']) &&
+                       isValidNotification(incoming());
+
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(notificationId);
+    }
+
+    match /events/{eventId} {
+      allow get: if isSignedIn() && isValidId(eventId);
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(eventId) &&
+                       incoming().keys().hasAll(['title', 'desc', 'multiplierPercent', 'startAtMillis', 'endAtMillis', 'active', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['title', 'desc', 'multiplierPercent', 'startAtMillis', 'endAtMillis', 'active', 'updatedAt']) &&
+                       isValidEvent(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(eventId) &&
+                       isValidEvent(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'desc', 'multiplierPercent', 'startAtMillis', 'endAtMillis', 'active', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(eventId);
+    }
+  }
+}
