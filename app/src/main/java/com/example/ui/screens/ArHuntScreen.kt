@@ -50,6 +50,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -85,9 +86,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.window.Dialog
 import com.example.R
 import com.example.ar.ArSensorController
 import com.example.ar.ArTreasureEngine
+import com.example.ar.MathQuizGenerator
+import com.example.ar.MathQuizProblem
 import com.example.ar.SpawnedTreasure
 import com.example.audio.SoundEffectsManager
 import com.example.haptics.HapticsHelper
@@ -95,10 +99,13 @@ import com.example.model.TreasureDefinition
 import com.example.ui.components.ChunkyActionButton
 import com.example.ui.components.RarityBadge
 import com.example.ui.theme.CoralBerry
+import com.example.ui.theme.CoralBerryLight
 import com.example.ui.theme.DeepOceanNavy
 import com.example.ui.theme.MintEmerald
 import com.example.ui.theme.MintEmeraldDark
 import com.example.ui.theme.SkyBluePrimary
+import com.example.ui.theme.SkyBlueSurface
+import com.example.ui.theme.SoftSlateText
 import com.example.ui.theme.SunnyGold
 import com.example.ui.theme.SunnyGoldDark
 import com.example.ui.theme.SunnyGoldLight
@@ -190,8 +197,24 @@ fun ArHuntScreen(
     var lockTargetId by remember { mutableStateOf<String?>(null) }
     var lockProgress by remember { mutableFloatStateOf(0f) }
     var confettiParticles by remember { mutableStateOf<List<ConfettiParticle>>(emptyList()) }
+    var pendingQuiz by remember(roundKey) {
+        mutableStateOf<Pair<SpawnedTreasure, MathQuizProblem>?>(null)
+    }
 
-    fun triggerCapture(target: SpawnedTreasure) {
+    fun requestCapture(target: SpawnedTreasure) {
+        if (target.collected || roundEnded || pendingQuiz != null) return
+        lockProgress = 0f
+        lockTargetId = null
+        soundManager.playPop()
+        haptics.tap()
+        val problem = MathQuizGenerator.generate(
+            playerLevel = profile.level,
+            rarity = target.definition.rarityEnum
+        )
+        pendingQuiz = target to problem
+    }
+
+    fun completeCapture(target: SpawnedTreasure) {
         if (target.collected || roundEnded) return
         spawnedTreasures = spawnedTreasures.map {
             if (it.instanceId == target.instanceId) it.copy(collected = true) else it
@@ -220,17 +243,25 @@ fun ArHuntScreen(
         }
     }
 
-    // Countdown timer
+    // Countdown timer (pauses while solving a math quiz so kids are never rushed)
     LaunchedEffect(roundKey, roundEnded) {
         if (roundEnded) return@LaunchedEffect
+        var quarterTicks = 0
         while (secondsLeft > 0 && !roundEnded) {
-            delay(1000L)
-            secondsLeft -= 1
-            if (spawnedTreasures.all { it.collected }) {
-                break
+            delay(250L)
+            if (pendingQuiz == null) {
+                quarterTicks += 1
+                if (quarterTicks >= 4) {
+                    quarterTicks = 0
+                    secondsLeft -= 1
+                    if (spawnedTreasures.all { it.collected }) {
+                        break
+                    }
+                }
             }
         }
         if (!roundEnded) {
+            pendingQuiz = null
             roundEnded = true
             soundManager.playRoundFinish()
             onRoundComplete(collectedThisRound.toList())
@@ -248,8 +279,12 @@ fun ArHuntScreen(
     }
 
     // Reticle auto-lock timer
-    LaunchedEffect(orientation, spawnedTreasures, roundEnded) {
-        if (roundEnded) return@LaunchedEffect
+    LaunchedEffect(orientation, spawnedTreasures, roundEnded, pendingQuiz) {
+        if (roundEnded || pendingQuiz != null) {
+            lockTargetId = null
+            lockProgress = 0f
+            return@LaunchedEffect
+        }
         val projected = spawnedTreasures
             .filter { !it.collected }
             .map { ArTreasureEngine.projectTreasure(it, orientation, magnifierScale) }
@@ -266,15 +301,16 @@ fun ArHuntScreen(
         }
     }
 
-    LaunchedEffect(lockTargetId, roundEnded) {
+    LaunchedEffect(lockTargetId, roundEnded, pendingQuiz) {
         val targetId = lockTargetId ?: return@LaunchedEffect
-        while (lockTargetId == targetId && !roundEnded) {
+        if (pendingQuiz != null) return@LaunchedEffect
+        while (lockTargetId == targetId && !roundEnded && pendingQuiz == null) {
             delay(60L)
             lockProgress = (lockProgress + 0.08f).coerceAtMost(1f)
             if (lockProgress >= 1f) {
                 val target = spawnedTreasures.firstOrNull { it.instanceId == targetId && !it.collected }
                 if (target != null) {
-                    triggerCapture(target)
+                    requestCapture(target)
                 }
                 break
             }
@@ -391,7 +427,7 @@ fun ArHuntScreen(
                                     )
                                 )
                             )
-                            .clickable { triggerCapture(proj.treasure) },
+                            .clickable { requestCapture(proj.treasure) },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -680,7 +716,28 @@ fun ArHuntScreen(
             }
         }
 
-        // 7. Round Result Overlay
+        // 7. Elementary Math Quiz Unlock Dialog
+        val activeQuiz = pendingQuiz
+        if (activeQuiz != null && !roundEnded) {
+            TreasureMathQuizDialog(
+                target = activeQuiz.first,
+                problem = activeQuiz.second,
+                onWrongAnswer = {
+                    soundManager.playWrongBuzz()
+                    haptics.tap()
+                },
+                onSolved = {
+                    val solvedTarget = activeQuiz.first
+                    pendingQuiz = null
+                    completeCapture(solvedTarget)
+                },
+                onDismiss = {
+                    pendingQuiz = null
+                }
+            )
+        }
+
+        // 8. Round Result Overlay
         if (roundEnded) {
             RoundResultOverlay(
                 foundTreasures = collectedThisRound,
@@ -854,6 +911,157 @@ private fun RoundResultOverlay(
                         contentColor = Color.White,
                         modifier = Modifier.weight(1.3f),
                         onClick = onPlayAgain
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TreasureMathQuizDialog(
+    target: SpawnedTreasure,
+    problem: MathQuizProblem,
+    onWrongAnswer: () -> Unit,
+    onSolved: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var wrongAnswers by remember(target.instanceId, problem.expression) {
+        mutableStateOf<Set<Int>>(emptySet())
+    }
+    val hasTriedWrong = wrongAnswers.isNotEmpty()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            color = Color.White,
+            shape = RoundedCornerShape(28.dp),
+            shadowElevation = 14.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("math_quiz_dialog")
+        ) {
+            Column(
+                modifier = Modifier.padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    color = SunnyGoldLight,
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(
+                        text = "🔐 수학 자물쇠 · ${problem.difficultyLabel}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DeepOceanNavy,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(text = target.definition.emoji, fontSize = 36.sp)
+                    Column {
+                        Text(
+                            text = target.definition.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = DeepOceanNavy
+                        )
+                        RarityBadge(rarity = target.definition.rarityEnum)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "정답을 맞히면 보물 상자가 열려요!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SoftSlateText,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Surface(
+                    color = SkyBlueSurface,
+                    shape = RoundedCornerShape(22.dp),
+                    border = BorderStroke(2.dp, SkyBluePrimary.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = problem.expression,
+                        style = MaterialTheme.typography.displayMedium.copy(fontSize = 30.sp),
+                        color = DeepOceanNavy,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(vertical = 18.dp, horizontal = 12.dp)
+                    )
+                }
+
+                AnimatedVisibility(visible = hasTriedWrong) {
+                    Surface(
+                        color = CoralBerryLight,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp)
+                    ) {
+                        Text(
+                            text = "앗, 아쉬워요! 다시 풀어볼까요?\n💡 힌트: ${problem.hint}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = CoralBerry,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 2x2 tactile answer buttons
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (rowIdx in 0..1) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            for (colIdx in 0..1) {
+                                val idx = rowIdx * 2 + colIdx
+                                val choice = problem.choices[idx]
+                                val isWrongTried = choice in wrongAnswers
+                                ChunkyActionButton(
+                                    text = choice.toString(),
+                                    containerColor = if (isWrongTried) CoralBerryLight else SunnyGold,
+                                    shadowColor = if (isWrongTried) CoralBerry.copy(alpha = 0.45f) else SunnyGoldDark,
+                                    contentColor = if (isWrongTried) CoralBerry else DeepOceanNavy,
+                                    enabled = !isWrongTried,
+                                    testTagName = "math_quiz_choice_$idx",
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(58.dp),
+                                    onClick = {
+                                        if (choice == problem.correctAnswer) {
+                                            onSolved()
+                                        } else {
+                                            wrongAnswers = wrongAnswers + choice
+                                            onWrongAnswer()
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("math_quiz_cancel_button")
+                ) {
+                    Text(
+                        text = "나중에 다시 풀기",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = SoftSlateText
                     )
                 }
             }

@@ -26,6 +26,11 @@ class SoundEffectsManager {
         playNotes(listOf(ToneSpec(880.0, 90, 0.18), ToneSpec(1174.66, 110, 0.14)))
     }
 
+    fun playWrongBuzz() {
+        if (!enabled) return
+        playNotes(listOf(ToneSpec(261.63, 95, 0.24), ToneSpec(196.0, 140, 0.24)))
+    }
+
     fun playCollectSparkle(isHighRarity: Boolean = false) {
         if (!enabled) return
         val notes = if (isHighRarity) {
